@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+from functools import lru_cache
+
+from app.adapters.celery_server_adapter import CeleryServerAdapter
+from app.adapters.rag_server_adapter import RagServerAdapter
+from app.adapters.terminal_tools_adapter import TerminalToolsAdapter
+from app.agents.research_agent import ResearchAgent
+from app.agents.script_ops_agent import ScriptOpsAgent
+from app.agents.supervisor_agent import SupervisorAgent
+from app.agents.synthesis_agent import SynthesisAgent
+from app.agents.terminal_agent import TerminalAgent
+from app.core.settings import get_settings
+from app.services.capabilities_service import CapabilitiesService
+from app.services.provider_service import ProviderService
+from app.services.run_service import RunService
+from app.storage.run_store import RunStore
+
+
+@lru_cache(maxsize=1)
+def get_store() -> RunStore:
+    settings = get_settings()
+    return RunStore(db_path=settings.runs_db_path, logs_dir=settings.logs_dir)
+
+
+@lru_cache(maxsize=1)
+def get_provider_service() -> ProviderService:
+    return ProviderService(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_terminal_adapter() -> TerminalToolsAdapter:
+    s = get_settings()
+    return TerminalToolsAdapter(base_url=s.terminal_tools_base_url, timeout_seconds=s.backend_timeout_seconds)
+
+
+@lru_cache(maxsize=1)
+def get_rag_adapter() -> RagServerAdapter:
+    s = get_settings()
+    return RagServerAdapter(base_url=s.rag_server_base_url, timeout_seconds=s.backend_timeout_seconds)
+
+
+@lru_cache(maxsize=1)
+def get_celery_adapter() -> CeleryServerAdapter:
+    s = get_settings()
+    return CeleryServerAdapter(base_url=s.celery_server_base_url, timeout_seconds=s.backend_timeout_seconds)
+
+
+@lru_cache(maxsize=1)
+def get_supervisor_agent() -> SupervisorAgent:
+    return SupervisorAgent()
+
+
+@lru_cache(maxsize=1)
+def get_research_agent() -> ResearchAgent:
+    return ResearchAgent(get_rag_adapter())
+
+
+@lru_cache(maxsize=1)
+def get_terminal_agent() -> TerminalAgent:
+    return TerminalAgent(get_terminal_adapter())
+
+
+@lru_cache(maxsize=1)
+def get_script_ops_agent() -> ScriptOpsAgent:
+    return ScriptOpsAgent(get_celery_adapter())
+
+
+@lru_cache(maxsize=1)
+def get_synthesis_agent() -> SynthesisAgent:
+    return SynthesisAgent()
+
+
+@lru_cache(maxsize=1)
+def get_run_service() -> RunService:
+    return RunService(
+        store=get_store(),
+        provider_service=get_provider_service(),
+        supervisor=get_supervisor_agent(),
+        research=get_research_agent(),
+        terminal=get_terminal_agent(),
+        script_ops=get_script_ops_agent(),
+        synthesis=get_synthesis_agent(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_capabilities_service() -> CapabilitiesService:
+    return CapabilitiesService(
+        provider_service=get_provider_service(),
+        terminal_adapter=get_terminal_adapter(),
+        rag_adapter=get_rag_adapter(),
+        celery_adapter=get_celery_adapter(),
+    )
