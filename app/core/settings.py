@@ -27,16 +27,19 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
+    deepseek_base_url: str = Field(default="https://api.deepseek.com", alias="DEEPSEEK_BASE_URL")
+    deepseek_timeout_seconds: int = Field(default=60, alias="DEEPSEEK_TIMEOUT_SECONDS")
     deepseek_text_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_TEXT_MODEL")
     gemini_supervisor_model: str = Field(default="gemini-2.5-pro", alias="GEMINI_SUPERVISOR_MODEL")
     openai_special_model: str = Field(default="gpt-4.1-mini", alias="OPENAI_SPECIAL_MODEL")
 
     terminal_tools_base_url: str = Field(default="http://127.0.0.1:8090", alias="TERMINAL_TOOLS_BASE_URL")
-    terminal_tools_mcp_url: str = Field(default="http://127.0.0.1:8090/mcp", alias="TERMINAL_TOOLS_MCP_URL")
+    terminal_tools_mcp_url: str = Field(default="http://127.0.0.1:8091/mcp/", alias="TERMINAL_TOOLS_MCP_URL")
     rag_server_base_url: str = Field(default="http://127.0.0.1:8000", alias="RAG_SERVER_BASE_URL")
     rag_server_mcp_url: str = Field(default="http://127.0.0.1:8081", alias="RAG_SERVER_MCP_URL")
-    celery_server_base_url: str = Field(default="http://127.0.0.1:8010", alias="CELERY_SERVER_BASE_URL")
-    celery_server_mcp_url: str = Field(default="http://127.0.0.1:8010/mcp", alias="CELERY_SERVER_MCP_URL")
+    rag_default_tenant_id: str = Field(default="tenant-stack-probe", alias="RAG_DEFAULT_TENANT_ID")
+    celery_server_base_url: str = Field(default="http://127.0.0.1:8011", alias="CELERY_SERVER_BASE_URL")
+    celery_server_mcp_url: str = Field(default="http://127.0.0.1:8082/mcp", alias="CELERY_SERVER_MCP_URL")
 
     backend_timeout_seconds: int = Field(default=20, alias="BACKEND_TIMEOUT_SECONDS")
 

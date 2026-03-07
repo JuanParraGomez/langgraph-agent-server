@@ -65,7 +65,13 @@ class ComplexTaskGraph:
 
         async def research_node(state: GraphState) -> GraphState:
             out = dict(state.get("outputs", {}))
-            out["research"] = await self.research.run(question=state["goal"], top_k=5)
+            context = state.get("context", {})
+            out["research"] = await self.research.run(
+                question=state["goal"],
+                top_k=5,
+                tenant_id=context.get("tenant_id"),
+                filters=context.get("filters", {}),
+            )
             return {"outputs": out, "next_agent_idx": state.get("next_agent_idx", 0) + 1, "iterations": state.get("iterations", 0) + 1}
 
         async def terminal_node(state: GraphState) -> GraphState:
@@ -123,7 +129,12 @@ class ComplexTaskGraph:
             outputs: dict[str, Any] = {}
             for agent_name in plan.get("selected_agents", []):
                 if agent_name == "research_agent":
-                    outputs["research"] = await self.research.run(question=goal, top_k=5)
+                    outputs["research"] = await self.research.run(
+                        question=goal,
+                        top_k=5,
+                        tenant_id=context.get("tenant_id"),
+                        filters=context.get("filters", {}),
+                    )
                 elif agent_name == "terminal_agent":
                     outputs["terminal"] = await self.terminal.run(task=goal)
                 elif agent_name == "script_ops_agent":

@@ -39,6 +39,8 @@ class CapabilitiesService:
             "agents": [
                 {"name": "supervisor_agent", "role": "plan/delegate/control iterations"},
                 {"name": "research_agent", "role": "document retrieval/context"},
+                {"name": "memory_review_agent", "role": "check similar work and version hints in rag-server"},
+                {"name": "prompt_engineer_agent", "role": "build strong code prompts and routing flow"},
                 {"name": "terminal_agent", "role": "operational terminal subtasks"},
                 {"name": "script_ops_agent", "role": "script operations via celery-server"},
                 {"name": "synthesis_agent", "role": "final synthesis"},
@@ -48,6 +50,11 @@ class CapabilitiesService:
                     "name": "supervisor_v1",
                     "engine": "langgraph",
                     "description": "Supervisor -> specialized subagents -> synthesis",
-                }
+                },
+                {
+                    "name": "prompt_workflow_v1",
+                    "engine": "service-workflow",
+                    "description": "Memory review -> prompt engineering -> optional publication to rag-server",
+                },
             ],
         }

@@ -8,6 +8,7 @@ from app.models.schemas import (
     ComplexTaskRequest,
     HealthResponse,
     PlanTaskRequest,
+    PromptWorkflowRequest,
     ResearchSubtaskRequest,
     RunLogsResponse,
     RunResponse,
@@ -63,6 +64,12 @@ async def run_complex(req: ComplexTaskRequest) -> RunResponse:
 @router.post("/run/plan")
 async def run_plan(req: PlanTaskRequest) -> dict:
     return await get_run_service().plan_only(req)
+
+
+@router.post("/run/prompt-workflow", response_model=RunResponse)
+async def run_prompt_workflow(req: PromptWorkflowRequest) -> RunResponse:
+    run = await get_run_service().run_prompt_workflow(req)
+    return RunResponse(run=run)
 
 
 @router.post("/run/research")

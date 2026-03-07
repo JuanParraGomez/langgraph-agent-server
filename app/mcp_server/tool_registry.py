@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from app.models.schemas import (
     ComplexTaskRequest,
     PlanTaskRequest,
+    PromptWorkflowRequest,
     ResearchSubtaskRequest,
     ScriptOpsSubtaskRequest,
     SummarizeFindingsRequest,
@@ -46,6 +47,12 @@ async def _agent_run_complex_task(payload: dict[str, Any]) -> dict[str, Any]:
 async def _agent_plan_task(payload: dict[str, Any]) -> dict[str, Any]:
     req = PlanTaskRequest.model_validate(payload)
     return await get_run_service().plan_only(req)
+
+
+async def _agent_run_prompt_workflow(payload: dict[str, Any]) -> dict[str, Any]:
+    req = PromptWorkflowRequest.model_validate(payload)
+    run = await get_run_service().run_prompt_workflow(req)
+    return run.model_dump(mode="json")
 
 
 async def _agent_run_research(payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +105,8 @@ async def _agent_list_agents(_: dict[str, Any]) -> dict[str, Any]:
         "agents": [
             {"name": "supervisor_agent", "role": "planning/delegation/control"},
             {"name": "research_agent", "role": "rag/document context"},
+            {"name": "memory_review_agent", "role": "similarity/version check against rag memory"},
+            {"name": "prompt_engineer_agent", "role": "build prompt package and tool flow"},
             {"name": "terminal_agent", "role": "terminal operations via terminal-tools"},
             {"name": "script_ops_agent", "role": "script ops via celery-server"},
             {"name": "synthesis_agent", "role": "final synthesis"},
@@ -110,6 +119,7 @@ TOOL_SPECS: list[ToolSpec] = [
     ToolSpec(name="agent_list_capabilities", description="List providers, agents, graphs and connected backends", input_schema={"type": "object", "properties": {}}),
     ToolSpec(name="agent_run_complex_task", description="Main tool: run complex task through supervisor graph", input_schema=ComplexTaskRequest.model_json_schema()),
     ToolSpec(name="agent_plan_task", description="Produce structured plan without full execution", input_schema=PlanTaskRequest.model_json_schema()),
+    ToolSpec(name="agent_run_prompt_workflow", description="Review similar memory, generate code-task prompts, and publish learning to rag-server", input_schema=PromptWorkflowRequest.model_json_schema()),
     ToolSpec(name="agent_run_research", description="Run research-focused subtask with research_agent", input_schema=ResearchSubtaskRequest.model_json_schema()),
     ToolSpec(name="agent_run_terminal_subtask", description="Run operational subtask through terminal_agent", input_schema=TerminalSubtaskRequest.model_json_schema()),
     ToolSpec(name="agent_run_script_ops_subtask", description="Run script operation through script_ops_agent", input_schema=ScriptOpsSubtaskRequest.model_json_schema()),
@@ -125,6 +135,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "agent_list_capabilities": _agent_list_capabilities,
     "agent_run_complex_task": _agent_run_complex_task,
     "agent_plan_task": _agent_plan_task,
+    "agent_run_prompt_workflow": _agent_run_prompt_workflow,
     "agent_run_research": _agent_run_research,
     "agent_run_terminal_subtask": _agent_run_terminal_subtask,
     "agent_run_script_ops_subtask": _agent_run_script_ops_subtask,

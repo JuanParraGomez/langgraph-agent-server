@@ -26,6 +26,15 @@ class PlanTaskRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
+class PromptWorkflowRequest(BaseModel):
+    goal: str = Field(min_length=3)
+    context: dict[str, Any] = Field(default_factory=dict)
+    tenant_id: str | None = Field(default=None, min_length=1)
+    agent_name: str | None = None
+    current_version: str | None = None
+    publish_learning: bool = True
+
+
 class ResearchSubtaskRequest(BaseModel):
     question: str = Field(min_length=3)
     top_k: int = Field(default=5, ge=1, le=20)

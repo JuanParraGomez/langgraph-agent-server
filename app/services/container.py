@@ -10,8 +10,11 @@ from app.agents.script_ops_agent import ScriptOpsAgent
 from app.agents.supervisor_agent import SupervisorAgent
 from app.agents.synthesis_agent import SynthesisAgent
 from app.agents.terminal_agent import TerminalAgent
+from app.agents.prompt_engineer_agent import PromptEngineerAgent
+from app.agents.memory_review_agent import MemoryReviewAgent
 from app.core.settings import get_settings
 from app.services.capabilities_service import CapabilitiesService
+from app.services.deepseek_service import DeepSeekService
 from app.services.provider_service import ProviderService
 from app.services.run_service import RunService
 from app.storage.run_store import RunStore
@@ -26,6 +29,11 @@ def get_store() -> RunStore:
 @lru_cache(maxsize=1)
 def get_provider_service() -> ProviderService:
     return ProviderService(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_deepseek_service() -> DeepSeekService:
+    return DeepSeekService(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -53,7 +61,14 @@ def get_supervisor_agent() -> SupervisorAgent:
 
 @lru_cache(maxsize=1)
 def get_research_agent() -> ResearchAgent:
-    return ResearchAgent(get_rag_adapter())
+    settings = get_settings()
+    return ResearchAgent(get_rag_adapter(), default_tenant_id=settings.rag_default_tenant_id)
+
+
+@lru_cache(maxsize=1)
+def get_memory_review_agent() -> MemoryReviewAgent:
+    settings = get_settings()
+    return MemoryReviewAgent(get_rag_adapter(), default_tenant_id=settings.rag_default_tenant_id)
 
 
 @lru_cache(maxsize=1)
@@ -72,15 +87,23 @@ def get_synthesis_agent() -> SynthesisAgent:
 
 
 @lru_cache(maxsize=1)
+def get_prompt_engineer_agent() -> PromptEngineerAgent:
+    return PromptEngineerAgent(get_deepseek_service())
+
+
+@lru_cache(maxsize=1)
 def get_run_service() -> RunService:
     return RunService(
         store=get_store(),
         provider_service=get_provider_service(),
         supervisor=get_supervisor_agent(),
         research=get_research_agent(),
+        memory_review=get_memory_review_agent(),
         terminal=get_terminal_agent(),
         script_ops=get_script_ops_agent(),
         synthesis=get_synthesis_agent(),
+        prompt_engineer=get_prompt_engineer_agent(),
+        rag_adapter=get_rag_adapter(),
     )
 
 
