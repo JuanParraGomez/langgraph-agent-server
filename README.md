@@ -144,6 +144,33 @@ Correr modo MCP HTTP:
 ./scripts/run_mcp_http.sh
 ```
 
+## Ejecución con Docker
+
+Build y run:
+
+```bash
+cd /home/juan/Documents/langgraph-agent-server
+docker compose up --build -d
+```
+
+Ver logs:
+
+```bash
+docker compose logs -f langgraph-agent-server
+```
+
+Parar:
+
+```bash
+docker compose down
+```
+
+Notas:
+
+- El contenedor monta `/home/juan/Documents/.env` como `/host_global.env`.
+- `GLOBAL_ENV_PATH` se define a `/host_global.env`.
+- Se usa `host.docker.internal` para llegar a `terminal-tools`, `rag-server`, `celery-server` que corren en host.
+
 ## Ejemplos curl
 
 Health:

@@ -1,0 +1,27 @@
+services:
+  langgraph-agent-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph-agent-server
+    ports:
+      - "8070:8070"
+    environment:
+      AGENT_SERVER_HOST: 0.0.0.0
+      AGENT_SERVER_PORT: 8070
+      AGENT_DATA_DIR: /app/data
+      GLOBAL_ENV_PATH: /host_global.env
+
+      # Host services (rag-server, terminal-tools, celery-server)
+      TERMINAL_TOOLS_BASE_URL: http://host.docker.internal:8090
+      TERMINAL_TOOLS_MCP_URL: http://host.docker.internal:8090/mcp
+      RAG_SERVER_BASE_URL: http://host.docker.internal:8000
+      RAG_SERVER_MCP_URL: http://host.docker.internal:8081
+      CELERY_SERVER_BASE_URL: http://host.docker.internal:8010
+      CELERY_SERVER_MCP_URL: http://host.docker.internal:8010/mcp
+    volumes:
+      - ./data:/app/data
+      - /home/juan/Documents/.env:/host_global.env:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
