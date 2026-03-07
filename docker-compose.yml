@@ -14,7 +14,7 @@ services:
 
       # Host services (rag-server, terminal-tools, celery-server)
       TERMINAL_TOOLS_BASE_URL: http://host.docker.internal:8090
-      TERMINAL_TOOLS_MCP_URL: http://host.docker.internal:8090/mcp
+      TERMINAL_TOOLS_MCP_URL: http://host.docker.internal:8091/mcp/
       RAG_SERVER_BASE_URL: http://host.docker.internal:8000
       RAG_SERVER_MCP_URL: http://host.docker.internal:8081
       CELERY_SERVER_BASE_URL: http://host.docker.internal:8011
