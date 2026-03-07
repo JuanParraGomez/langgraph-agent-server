@@ -35,6 +35,8 @@ Separación de responsabilidades:
 
 - `supervisor_agent`: planifica, decide delegación y controla iteraciones
 - `research_agent`: consulta `rag-server`
+- `memory_review_agent`: revisa memoria/versiones previas en `rag-server`
+- `prompt_engineer_agent`: genera paquetes de prompts para tareas de código
 - `terminal_agent`: delega subtareas operativas a `terminal-tools`
 - `script_ops_agent`: delega `validate/create/run/get_logs` a `celery-server`
 - `synthesis_agent`: consolida resultados y entrega salida final limpia
@@ -47,6 +49,14 @@ Separación de responsabilidades:
 - iteración limitada por `max_iterations`
 - fallback limpio si LangGraph no está disponible (servicio no cae)
 
+Flujo adicional:
+
+`prompt_workflow_v1 = memory_review_agent -> prompt_engineer_agent -> publish to rag-server`
+
+- usa `DeepSeek` para razonamiento/prompting
+- consulta memoria similar y versiones previas en `rag-server`
+- publica el aprendizaje final en `rag-server`
+
 ## API HTTP
 
 - `GET /health`
@@ -55,6 +65,7 @@ Separación de responsabilidades:
 - `GET /graphs`
 - `POST /run/complex`
 - `POST /run/plan`
+- `POST /run/prompt-workflow`
 - `POST /run/research`
 - `POST /run/terminal`
 - `POST /run/script-ops`
@@ -74,14 +85,15 @@ Tools incluidas:
 2. `agent_list_capabilities`
 3. `agent_run_complex_task`
 4. `agent_plan_task`
-5. `agent_run_research`
-6. `agent_run_terminal_subtask`
-7. `agent_run_script_ops_subtask`
-8. `agent_summarize_findings`
-9. `agent_get_run`
-10. `agent_get_run_logs`
-11. `agent_list_graphs`
-12. `agent_list_agents`
+5. `agent_run_prompt_workflow`
+6. `agent_run_research`
+7. `agent_run_terminal_subtask`
+8. `agent_run_script_ops_subtask`
+9. `agent_summarize_findings`
+10. `agent_get_run`
+11. `agent_get_run_logs`
+12. `agent_list_graphs`
+13. `agent_list_agents`
 
 ## Variables de entorno y env global
 
@@ -201,6 +213,21 @@ MCP tool call:
 curl -sS -X POST http://127.0.0.1:8070/mcp/tools/agent_run_research \
   -H 'content-type: application/json' \
   -d '{"question":"resumen de estrategia de backups","top_k":5}'
+```
+
+Prompt workflow:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8070/run/prompt-workflow \
+  -H 'content-type: application/json' \
+  -d '{
+    "goal":"crear un agente para mejorar prompts de codigo y dejar flujo barato",
+    "tenant_id":"tenant-stack-probe",
+    "agent_name":"prompt_optimizer_agent",
+    "current_version":"v1",
+    "publish_learning":true,
+    "context":{"complexity":4}
+  }'
 ```
 
 ## Estructura

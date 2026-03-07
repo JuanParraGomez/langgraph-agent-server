@@ -5,5 +5,6 @@ __pycache__/
 .env
 data/runs/*.db
 data/logs/*.log
+data/trash/task_*/
 
 *.egg-info/
