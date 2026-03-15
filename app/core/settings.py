@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     celery_server_mcp_url: str = Field(default="http://127.0.0.1:8082/mcp", alias="CELERY_SERVER_MCP_URL")
     hapi_base_url: str = Field(default="http://127.0.0.1:8095", alias="HAPI_BASE_URL")
     hapi_mcp_url: str = Field(default="http://127.0.0.1:8096/mcp/", alias="HAPI_MCP_URL")
+    voice_pair_base_url: str = Field(default="http://127.0.0.1:8085", alias="VOICE_PAIR_BASE_URL")
     ui_factory_repo_root: Path = Field(default=Path("/home/juan/Documents/coolify-server"), alias="UI_FACTORY_REPO_ROOT")
     ui_factory_repo_url: str = Field(default="git@github.com:JuanParraGomez/coolify-server.git", alias="UI_FACTORY_REPO_URL")
     ui_factory_default_branch: str = Field(default="main", alias="UI_FACTORY_DEFAULT_BRANCH")
@@ -59,9 +60,12 @@ class Settings(BaseSettings):
     backend_timeout_seconds: int = Field(default=20, alias="BACKEND_TIMEOUT_SECONDS")
 
     langsmith_enabled: bool = Field(default=True, alias="LANGSMITH_ENABLED")
+    langsmith_tracing: bool = Field(default=True, alias="LANGSMITH_TRACING")
+    langsmith_enforce: bool = Field(default=True, alias="LANGSMITH_ENFORCE")
     langsmith_api_key: str | None = Field(default=None, alias="LANGSMITH_API_KEY")
     langsmith_project: str = Field(default="langgraph-agent-server", alias="LANGSMITH_PROJECT")
     langsmith_endpoint: str = Field(default="https://api.smith.langchain.com", alias="LANGSMITH_ENDPOINT")
+    langsmith_workspace_id: str | None = Field(default=None, alias="LANGSMITH_WORKSPACE_ID")
 
     @property
     def runs_db_path(self) -> Path:

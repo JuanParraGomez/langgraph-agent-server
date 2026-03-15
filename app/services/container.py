@@ -3,8 +3,10 @@ from __future__ import annotations
 from functools import lru_cache
 
 from app.adapters.celery_server_adapter import CeleryServerAdapter
+from app.adapters.hapi_client import HapiClient
 from app.adapters.rag_server_adapter import RagServerAdapter
 from app.adapters.terminal_tools_adapter import TerminalToolsAdapter
+from app.adapters.voice_pair_adapter import VoicePairAdapter
 from app.agents.research_agent import ResearchAgent
 from app.agents.script_ops_agent import ScriptOpsAgent
 from app.agents.supervisor_agent import SupervisorAgent
@@ -12,6 +14,7 @@ from app.agents.synthesis_agent import SynthesisAgent
 from app.agents.terminal_agent import TerminalAgent
 from app.agents.prompt_engineer_agent import PromptEngineerAgent
 from app.agents.memory_review_agent import MemoryReviewAgent
+from app.agents.failure_recovery_agent import FailureRecoveryAgent
 from app.core.settings import get_settings
 from app.services.capabilities_service import CapabilitiesService
 from app.services.deepseek_service import DeepSeekService
@@ -55,6 +58,18 @@ def get_celery_adapter() -> CeleryServerAdapter:
 
 
 @lru_cache(maxsize=1)
+def get_hapi_client() -> HapiClient:
+    s = get_settings()
+    return HapiClient(base_url=s.hapi_base_url, timeout_seconds=s.backend_timeout_seconds)
+
+
+@lru_cache(maxsize=1)
+def get_voice_pair_adapter() -> VoicePairAdapter:
+    s = get_settings()
+    return VoicePairAdapter(base_url=s.voice_pair_base_url, timeout_seconds=s.backend_timeout_seconds)
+
+
+@lru_cache(maxsize=1)
 def get_supervisor_agent() -> SupervisorAgent:
     return SupervisorAgent()
 
@@ -92,6 +107,11 @@ def get_prompt_engineer_agent() -> PromptEngineerAgent:
 
 
 @lru_cache(maxsize=1)
+def get_failure_recovery_agent() -> FailureRecoveryAgent:
+    return FailureRecoveryAgent()
+
+
+@lru_cache(maxsize=1)
 def get_run_service() -> RunService:
     return RunService(
         store=get_store(),
@@ -103,7 +123,10 @@ def get_run_service() -> RunService:
         script_ops=get_script_ops_agent(),
         synthesis=get_synthesis_agent(),
         prompt_engineer=get_prompt_engineer_agent(),
+        failure_recovery=get_failure_recovery_agent(),
         rag_adapter=get_rag_adapter(),
+        hapi_client=get_hapi_client(),
+        settings=get_settings(),
     )
 
 
@@ -114,4 +137,6 @@ def get_capabilities_service() -> CapabilitiesService:
         terminal_adapter=get_terminal_adapter(),
         rag_adapter=get_rag_adapter(),
         celery_adapter=get_celery_adapter(),
+        hapi_client=get_hapi_client(),
+        voice_pair_adapter=get_voice_pair_adapter(),
     )

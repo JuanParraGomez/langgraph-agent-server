@@ -10,14 +10,14 @@ class HttpAdapter:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
-    async def _get(self, path: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+    async def _get(self, path: str, timeout_seconds: int | None = None) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=timeout_seconds or self.timeout_seconds) as client:
             response = await client.get(f"{self.base_url}{path}")
             response.raise_for_status()
             return response.json()
 
-    async def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+    async def _post(self, path: str, payload: dict[str, Any], timeout_seconds: int | None = None) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=timeout_seconds or self.timeout_seconds) as client:
             response = await client.post(f"{self.base_url}{path}", json=payload)
             response.raise_for_status()
             return response.json()

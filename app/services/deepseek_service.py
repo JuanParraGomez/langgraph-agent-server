@@ -34,6 +34,8 @@ class DeepSeekService:
             "copilot_small_change, copilot_plan_then_codex. "
             "Small code fixes should prefer copilot_small_change. "
             "Complex or multi-file code tasks should prefer copilot_plan_then_codex. "
+            "For Copilot model selection, allow only GPT-5 mini (gpt-5-mini) or GPT-4.1 (gpt-4.1). "
+            "For planning/review, use Claude Haiku 4.5 (claude-haiku-4.5). "
             "The output JSON must include keys: workflow, rationale, planning_prompt, execution_prompt, "
             "validation_prompt, rag_learning_text, recommended_sequence."
         )

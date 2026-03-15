@@ -35,6 +35,49 @@ class PromptWorkflowRequest(BaseModel):
     publish_learning: bool = True
 
 
+class UIFactoryRequest(BaseModel):
+    goal: str = Field(min_length=3)
+    context: dict[str, Any] = Field(default_factory=dict)
+    tenant_id: str | None = Field(default=None, min_length=1)
+    app_name: str | None = None
+    slug: str | None = None
+    project_type: str = "long_lived"
+    deploy: bool = True
+    publish_memory: bool = True
+    max_iterations: int = Field(default=3, ge=1, le=10)
+    resume_run_id: str | None = None
+
+
+class CancelRunRequest(BaseModel):
+    reason: str | None = None
+
+
+class UIFactoryPlan(BaseModel):
+    action: str
+    slug: str
+    name: str
+    framework: str
+    app_type: str
+    template: str
+    project_type: str
+    rationale: str
+    project_root: str | None = None
+
+
+class UIFactoryResult(BaseModel):
+    status: str
+    app_id: str | None = None
+    action_taken: str
+    repo_url: str | None = None
+    branch: str | None = None
+    commit_sha: str | None = None
+    public_url: str | None = None
+    deployment_status: str
+    rag_ingested: bool
+    summary: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class ResearchSubtaskRequest(BaseModel):
     question: str = Field(min_length=3)
     top_k: int = Field(default=5, ge=1, le=20)
@@ -51,6 +94,12 @@ class ScriptOpsSubtaskRequest(BaseModel):
 
 class SummarizeFindingsRequest(BaseModel):
     run_id: str = Field(min_length=6)
+
+
+class VoiceSynthesisRequest(BaseModel):
+    text: str = Field(min_length=1, description="Text to synthesize into audio")
+    voice_id: str = Field(default="default", description="Voice identifier")
+    format: str = Field(default="wav", description="Audio format: wav or mp3")
 
 
 class RunRecord(BaseModel):

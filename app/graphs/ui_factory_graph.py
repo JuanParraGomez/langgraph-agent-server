@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+
+import httpx
 
 from app.agents.failure_recovery_agent import FailureRecoveryAgent
 from app.adapters.hapi_client import HapiClient, HapiClientError
@@ -43,6 +46,7 @@ class UIFactoryGraph:
         "publish_to_git",
         "resolve_public_state_with_hapi",
         "deploy_via_coolify",
+        "ensure_public_availability",
         "register_public_result_in_hapi",
         "ingest_ui_memory_to_rag",
         "synthesize_result",
@@ -217,12 +221,20 @@ class UIFactoryGraph:
 
     async def decide_tool_strategy(self, state: dict[str, Any]) -> dict[str, Any]:
         complexity = state["complexity"]["level"]
-        workflow = "copilot_plan_then_codex" if complexity in {"medium", "complex"} else "copilot_small_change"
+        context = state.get("context") or {}
+        force_workflow = str(context.get("force_workflow") or "").strip().lower()
+        if force_workflow in {"copilot_small_change", "copilot_plan_then_codex"}:
+            workflow = force_workflow
+            reason = f"Workflow forced by context.force_workflow={force_workflow}."
+        else:
+            workflow = "copilot_plan_then_codex" if complexity in {"medium", "complex"} else "copilot_small_change"
+            reason = "Complexity classifier routed this UI to Copilot planning plus Codex execution/integration." if workflow == "copilot_plan_then_codex" else "Complexity classifier routed this UI to direct Copilot execution."
         steps = ["copilot_plan_parallel", "codex_integrator", "task_execution", "git"] if workflow == "copilot_plan_then_codex" else ["copilot", "git"]
         state["tool_strategy"] = {
             "workflow": workflow,
             "steps": steps,
-            "reason": "Complexity classifier routed this UI to Copilot planning plus Codex execution/integration." if workflow == "copilot_plan_then_codex" else "Complexity classifier routed this UI to direct Copilot execution.",
+            "reason": reason,
+            "codex_fallback": "copilot",
         }
         return state["tool_strategy"]
 
@@ -352,10 +364,12 @@ class UIFactoryGraph:
             state["planning_consolidation"] = consolidated
             return consolidated
         objective = self._build_consolidation_objective(state)
-        consolidation_task = await self.terminal.run_codex(
+        consolidation_task = await self._run_codex_with_fallback(
+            state=state,
             objective=objective,
             cwd=state["workspace"]["cwd"],
             timeout_seconds=min(self.settings.ui_factory_execution_timeout_seconds, 1800),
+            step_name="consolidate_ui_plan",
         )
         self._assert_terminal_task_ok(consolidation_task, "consolidate_ui_plan")
         consolidated = {
@@ -402,8 +416,8 @@ class UIFactoryGraph:
                     "task_id": "task_ui_charts",
                     "title": "Build charts, drill-down and visual summaries",
                     "status": "pending",
-                    "tool": "codex",
-                    "difficulty": "complex",
+                    "tool": "codex" if complexity == "complex" else "copilot",
+                    "difficulty": "complex" if complexity == "complex" else "medium",
                     "target_paths": [item["path"] for item in workspace_plan["files"] if "chart" in item["path"] or "Dashboard" in item["path"]],
                 },
             ]
@@ -427,10 +441,12 @@ class UIFactoryGraph:
         async def _run_subtask(task: dict[str, Any]) -> dict[str, Any]:
             objective = self._build_task_execution_objective(state, task)
             if task["tool"] == "codex":
-                result = await self.terminal.run_codex(
+                result = await self._run_codex_with_fallback(
+                    state=state,
                     objective=objective,
                     cwd=cwd,
                     timeout_seconds=self.settings.ui_factory_execution_timeout_seconds,
+                    step_name=f"run_ui_execution.{task['task_id']}",
                 )
             else:
                 result = await self.terminal.run_copilot(
@@ -465,11 +481,20 @@ class UIFactoryGraph:
             return integration
         objective = self._build_integration_objective(state)
         cwd = state["workspace"]["cwd"]
-        integration_task = await self.terminal.run_codex(
-            objective=objective,
-            cwd=cwd,
-            timeout_seconds=self.settings.ui_factory_execution_timeout_seconds,
-        )
+        if (state.get("complexity") or {}).get("level") == "complex":
+            integration_task = await self._run_codex_with_fallback(
+                state=state,
+                objective=objective,
+                cwd=cwd,
+                timeout_seconds=self.settings.ui_factory_execution_timeout_seconds,
+                step_name="integrate_ui_work",
+            )
+        else:
+            integration_task = await self.terminal.run_copilot(
+                objective=objective,
+                cwd=cwd,
+                timeout_seconds=self.settings.ui_factory_small_change_timeout_seconds,
+            )
         self._assert_terminal_task_ok(integration_task, "integrate_ui_work")
         integration = {"integration_task": integration_task}
         state["integration"] = integration
@@ -657,18 +682,98 @@ class UIFactoryGraph:
         max_attempts = max(1, self.settings.ui_factory_deploy_max_attempts)
         for attempt in range(1, max_attempts + 1):
             deployment = await self.hapi.deploy_project(project_slug, deploy_payload)
-            attempts.append({"attempt": attempt, "deployment": deployment})
+            attempts.append({"attempt": attempt, "deployment": self._deployment_snapshot(deployment)})
             if self._deployment_is_healthy(deployment):
                 break
             if attempt >= max_attempts:
                 break
-            auto_fix = await self._auto_fix_deployment_failure(state=state, deployment=deployment, attempt=attempt)
-            attempts[-1]["auto_fix"] = auto_fix
+            recovery = await self._recover_publication_failure(
+                state=state,
+                deployment=deployment,
+                attempt=attempt,
+            )
+            attempts[-1]["recovery"] = recovery
+            recovered_deployment = recovery.get("deployment")
+            if isinstance(recovered_deployment, dict):
+                deployment = recovered_deployment
+                attempts[-1]["post_recovery_deployment"] = self._deployment_snapshot(recovered_deployment)
+                if self._deployment_is_healthy(recovered_deployment):
+                    break
             await asyncio.sleep(max(1, self.settings.ui_factory_deploy_retry_delay_seconds))
-        deployment = deployment or {"status": "failed", "error": "deploy_not_executed"}
+        deployment = self._deployment_snapshot(deployment) if deployment else {"status": "failed", "error": "deploy_not_executed"}
         deployment["attempts"] = attempts
         state["deployment"] = deployment
         return deployment
+
+    async def ensure_public_availability(self, state: dict[str, Any]) -> dict[str, Any]:
+        deployment = state.get("deployment") or {}
+        public_url = self._build_public_url((state.get("project") or {}).get("domain"))
+        if not public_url:
+            availability = {"checked": False, "reason": "public_url_missing"}
+            state["availability_check"] = availability
+            return availability
+        if not self._deployment_is_healthy(deployment):
+            availability = {
+                "checked": False,
+                "reason": "deployment_not_healthy",
+                "deployment_status": deployment.get("status"),
+                "url": public_url,
+            }
+            state["availability_check"] = availability
+            return availability
+
+        probe = await self._probe_public_url(public_url, attempts=4, delay_seconds=4)
+        if probe.get("available"):
+            state["availability_check"] = probe
+            return probe
+
+        project_slug = state["project"]["slug"]
+        deploy_payload = {
+            "environment_profile": "production" if state["ui_plan"]["project_type"] == "long_lived" else "sandbox",
+            "domain": state["project"].get("domain"),
+        }
+        repairs: list[dict[str, Any]] = []
+        for repair_attempt in range(1, 3):
+            refreshed = await self.hapi.deploy_project(project_slug, deploy_payload)
+            refreshed_snapshot = self._deployment_snapshot(refreshed)
+            state["deployment"] = refreshed_snapshot
+            repair_entry: dict[str, Any] = {
+                "attempt": repair_attempt,
+                "redeploy": refreshed_snapshot,
+            }
+            if not self._deployment_is_healthy(refreshed_snapshot):
+                auto_fix = await self._auto_fix_deployment_failure(
+                    state=state,
+                    deployment=refreshed_snapshot,
+                    attempt=repair_attempt,
+                )
+                repair_entry["auto_fix"] = auto_fix
+                refreshed = await self.hapi.deploy_project(project_slug, deploy_payload)
+                refreshed_snapshot = self._deployment_snapshot(refreshed)
+                state["deployment"] = refreshed_snapshot
+                repair_entry["post_fix_redeploy"] = refreshed_snapshot
+            probe = await self._probe_public_url(public_url, attempts=4, delay_seconds=4)
+            repair_entry["probe"] = probe
+            repairs.append(repair_entry)
+            if probe.get("available"):
+                availability = {
+                    **probe,
+                    "repaired": True,
+                    "repairs": repairs,
+                }
+                state["availability_check"] = availability
+                return availability
+
+        availability = {
+            "checked": True,
+            "available": False,
+            "reason": "public_url_unavailable_after_repair",
+            "url": public_url,
+            "deployment_status": (state.get("deployment") or {}).get("status"),
+            "repairs": repairs,
+        }
+        state["availability_check"] = availability
+        return availability
 
     async def register_public_result_in_hapi(self, state: dict[str, Any]) -> dict[str, Any]:
         project = state["project"]
@@ -798,18 +903,27 @@ class UIFactoryGraph:
         git_meta = state["git_publish"]
         deployment = state["deployment"]
         public_app = state.get("public_app") or {}
-        deployment_ok = self._deployment_is_healthy(deployment)
+        availability = state.get("availability_check") or {}
+        deployment_ok = self._deployment_is_healthy(deployment) or bool(availability.get("available"))
+        deployment_status = str(deployment.get("status", "unknown"))
+        deferred_statuses = {"deferred", "ready_for_deploy", "ready_for_coolify"}
+        requires_followup = False
+        if not deployment_ok and deployment_status.lower() in deferred_statuses:
+            requires_followup = True
+        final_status = "succeeded" if deployment_ok or requires_followup else "failed"
         result = {
-            "status": "succeeded" if deployment_ok else "failed",
+            "status": final_status,
             "app_id": public_app.get("app_id"),
             "action_taken": state["ui_plan"]["action"],
             "repo_url": git_meta.get("repo_url"),
             "branch": git_meta.get("branch"),
             "commit_sha": git_meta.get("commit_sha"),
             "public_url": self._build_public_url(project.get("domain")),
-            "deployment_status": deployment.get("status", "unknown"),
+            "deployment_status": deployment_status,
+            "requires_followup": requires_followup,
+            "followup_action": "retry_deploy_when_coolify_is_ready" if requires_followup else None,
             "rag_ingested": bool(state.get("rag_ingest", {}).get("document_id")),
-            "summary": f"UI workflow finished for {state['ui_plan']['slug']} with deployment status {deployment.get('status', 'unknown')}.",
+            "summary": f"UI workflow finished for {state['ui_plan']['slug']} with deployment status {deployment_status}.",
             "details": {
                 "project_slug": project["slug"],
                 "project_root": project["project_root"],
@@ -817,12 +931,66 @@ class UIFactoryGraph:
                 "data_strategy": state["data_strategy"],
                 "tool_strategy": state["tool_strategy"],
                 "deployment": deployment,
+                "availability_check": state.get("availability_check"),
                 "public_app": public_app,
                 "rag_ingest": state.get("rag_ingest"),
             },
         }
         state["final_result"] = result
         return result
+
+    async def _recover_publication_failure(
+        self,
+        *,
+        state: dict[str, Any],
+        deployment: dict[str, Any],
+        attempt: int,
+    ) -> dict[str, Any]:
+        error_text = deployment.get("error") or deployment.get("status") or "deployment_failed"
+        analysis = self.recovery.analyze(
+            step="deploy_via_coolify",
+            error=RuntimeError(str(error_text)),
+            state=state,
+        )
+        recovery: dict[str, Any] = {"analysis": analysis}
+        classification = str(analysis.get("classification") or "")
+        if classification in {"publishing_plane_temporarily_unavailable", "backend_connectivity"}:
+            health = await self.hapi.health()
+            try:
+                coolify = await self.hapi.coolify_health()
+            except HapiClientError as exc:
+                coolify = {
+                    "reachable": False,
+                    "error": str(exc),
+                    "status_code": exc.status_code,
+                    "payload": exc.payload,
+                }
+            recovery["health"] = {"hapi": health, "coolify": coolify}
+            if not bool(coolify.get("reachable")):
+                recovery["decision"] = "defer_until_coolify_available"
+                recovery["deployment"] = {
+                    **self._deployment_snapshot(deployment),
+                    "status": "deferred",
+                    "error": None,
+                    "details": {
+                        **(deployment.get("details") or {}),
+                        "reason": "coolify_temporarily_unavailable",
+                        "retry_recommended": True,
+                        "retry_after_seconds": max(30, self.settings.ui_factory_deploy_retry_delay_seconds * 4),
+                    },
+                }
+                return recovery
+        auto_fix = await self._auto_fix_deployment_failure(state=state, deployment=deployment, attempt=attempt)
+        recovery["auto_fix"] = auto_fix
+        redeploy = await self.hapi.deploy_project(
+            state["project"]["slug"],
+            {
+                "environment_profile": "production" if state["ui_plan"]["project_type"] == "long_lived" else "sandbox",
+                "domain": state["project"].get("domain"),
+            },
+        )
+        recovery["deployment"] = self._deployment_snapshot(redeploy)
+        return recovery
 
     async def _auto_fix_deployment_failure(self, *, state: dict[str, Any], deployment: dict[str, Any], attempt: int) -> dict[str, Any]:
         cwd = state["workspace"]["cwd"]
@@ -834,10 +1002,12 @@ class UIFactoryGraph:
             "Ensure Dockerfile/build files and runtime entry are correct for the selected framework. "
             "Keep README/app.meta.yaml/deploy.meta.yaml consistent only if needed."
         )
-        fix_task = await self.terminal.run_codex(
+        fix_task = await self._run_codex_with_fallback(
+            state=state,
             objective=objective,
             cwd=cwd,
             timeout_seconds=min(self.settings.ui_factory_execution_timeout_seconds, 2400),
+            step_name="_auto_fix_deployment_failure.fix_task",
         )
         self._assert_terminal_task_ok(fix_task, "_auto_fix_deployment_failure.fix_task")
         fix_validation = await self.validate_ui(state)
@@ -930,6 +1100,111 @@ class UIFactoryGraph:
     @staticmethod
     def _supports_public_deployment_record(deployment: dict[str, Any]) -> bool:
         return deployment.get("status") in {"unknown", "deploying", "ready_for_coolify", "deployed", "failed"}
+
+    async def _run_codex_with_fallback(
+        self,
+        *,
+        state: dict[str, Any],
+        objective: str,
+        cwd: str,
+        timeout_seconds: int,
+        step_name: str,
+    ) -> dict[str, Any]:
+        codex_task = await self.terminal.run_codex(
+            objective=objective,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+        )
+        if self._terminal_task_succeeded(codex_task):
+            return codex_task
+        if not self._codex_fallback_enabled(state):
+            return codex_task
+        copilot_timeout = max(60, min(timeout_seconds, self.settings.ui_factory_small_change_timeout_seconds))
+        copilot_task = await self.terminal.run_copilot(
+            objective=objective,
+            cwd=cwd,
+            timeout_seconds=copilot_timeout,
+        )
+        if self._terminal_task_succeeded(copilot_task):
+            metadata = (copilot_task.get("metadata") or {}) if isinstance(copilot_task, dict) else {}
+            metadata.update(
+                {
+                    "fallback_from": "codex",
+                    "fallback_step": step_name,
+                    "fallback_command": self._codex_fallback_command(state),
+                    "codex_error": (codex_task.get("error") if isinstance(codex_task, dict) else None),
+                }
+            )
+            if isinstance(copilot_task, dict):
+                copilot_task["metadata"] = metadata
+            return copilot_task
+        if isinstance(codex_task, dict):
+            result = codex_task.get("result") or {}
+            result["fallback_error"] = (copilot_task or {}).get("error") if isinstance(copilot_task, dict) else "copilot_fallback_failed"
+            codex_task["result"] = result
+        return codex_task
+
+    @staticmethod
+    def _terminal_task_succeeded(task: dict[str, Any] | None) -> bool:
+        if not task:
+            return False
+        if task.get("status") != "succeeded":
+            return False
+        result = task.get("result") or {}
+        return result.get("ok") is not False
+
+    def _codex_fallback_enabled(self, state: dict[str, Any]) -> bool:
+        context = state.get("context") or {}
+        raw = context.get("codex_fallback_to_copilot")
+        if raw is None:
+            return True
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"1", "true", "yes", "on", "copilot"}
+        return bool(raw)
+
+    def _codex_fallback_command(self, state: dict[str, Any]) -> str:
+        context = state.get("context") or {}
+        value = context.get("fallback_command")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return "if codex fails, use copilot and continue"
+
+    async def _probe_public_url(self, public_url: str, *, attempts: int, delay_seconds: int) -> dict[str, Any]:
+        timeout = max(5, min(30, self.settings.backend_timeout_seconds))
+        probes: list[dict[str, Any]] = []
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, verify=False) as client:
+                    response = await client.get(public_url)
+                status_code = response.status_code
+                ok = 200 <= status_code < 400
+                probes.append({"attempt": attempt, "status_code": status_code, "ok": ok})
+                if ok:
+                    return {
+                        "checked": True,
+                        "available": True,
+                        "url": public_url,
+                        "attempt": attempt,
+                        "probes": probes,
+                    }
+            except Exception as exc:
+                probes.append({"attempt": attempt, "ok": False, "error": str(exc)})
+            if attempt < attempts:
+                await asyncio.sleep(max(1, delay_seconds))
+        return {
+            "checked": True,
+            "available": False,
+            "url": public_url,
+            "probes": probes,
+        }
+
+    @staticmethod
+    def _deployment_snapshot(deployment: dict[str, Any] | None) -> dict[str, Any]:
+        if not deployment:
+            return {}
+        return copy.deepcopy(deployment)
 
     async def _recover_public_app(
         self,

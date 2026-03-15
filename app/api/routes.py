@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.settings import get_settings
 from app.models.schemas import (
+    CancelRunRequest,
     CapabilitiesResponse,
     ComplexTaskRequest,
     HealthResponse,
@@ -14,6 +15,7 @@ from app.models.schemas import (
     RunResponse,
     ScriptOpsSubtaskRequest,
     TerminalSubtaskRequest,
+    UIFactoryRequest,
 )
 from app.services.container import get_capabilities_service, get_run_service
 
@@ -72,6 +74,12 @@ async def run_prompt_workflow(req: PromptWorkflowRequest) -> RunResponse:
     return RunResponse(run=run)
 
 
+@router.post("/run/ui-factory", response_model=RunResponse)
+async def run_ui_factory(req: UIFactoryRequest) -> RunResponse:
+    run = await get_run_service().run_ui_factory(req)
+    return RunResponse(run=run)
+
+
 @router.post("/run/research")
 async def run_research(req: ResearchSubtaskRequest) -> dict:
     return await get_run_service().run_research(req)
@@ -98,3 +106,11 @@ async def get_run(run_id: str) -> RunResponse:
 @router.get("/runs/{run_id}/logs", response_model=RunLogsResponse)
 async def get_run_logs(run_id: str) -> RunLogsResponse:
     return RunLogsResponse(run_id=run_id, logs=get_run_service().get_run_logs(run_id))
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunResponse)
+async def cancel_run(run_id: str, req: CancelRunRequest) -> RunResponse:
+    run = get_run_service().cancel_run(run_id, req.reason)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run_not_found")
+    return RunResponse(run=run)

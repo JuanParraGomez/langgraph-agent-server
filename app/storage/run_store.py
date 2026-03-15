@@ -129,6 +129,25 @@ class RunStore:
                     logs.append({"event": "parse_error", "raw": line})
         return logs
 
+    def cancel_run(self, run_id: str, reason: str | None = None) -> RunRecord | None:
+        run = self.get_run(run_id)
+        if run is None:
+            return None
+        if run.status in {RunStatus.succeeded, RunStatus.failed, RunStatus.cancelled}:
+            return run
+        self.update_run(
+            run_id,
+            status=RunStatus.cancelled,
+            finished_at=datetime.now(timezone.utc),
+            error=reason or "cancelled_by_user",
+        )
+        self.append_log(run_id, "run_cancelled", {"reason": reason or "cancelled_by_user"})
+        return self.get_run(run_id)
+
+    def is_cancelled(self, run_id: str) -> bool:
+        run = self.get_run(run_id)
+        return run is not None and run.status == RunStatus.cancelled
+
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
