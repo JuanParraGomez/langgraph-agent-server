@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "supervisor_v1": "./app/studio/graphs.py:supervisor_graph",
+    "ui_factory_v1": "./app/studio/graphs.py:ui_factory_graph"
+  },
+  "env": ".env.studio"
+}

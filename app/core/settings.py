@@ -19,9 +19,13 @@ class Settings(BaseSettings):
     port: int = Field(default=8070, alias="AGENT_SERVER_PORT")
     data_dir: Path = Field(default=Path("./data"), alias="AGENT_DATA_DIR")
 
-    default_reasoning_provider: str = Field(default="deepseek", alias="DEFAULT_REASONING_PROVIDER")
-    default_planner_provider: str = Field(default="gemini", alias="DEFAULT_PLANNER_PROVIDER")
+    default_reasoning_provider: str = Field(default="anthropic", alias="DEFAULT_REASONING_PROVIDER")
+    default_planner_provider: str = Field(default="anthropic", alias="DEFAULT_PLANNER_PROVIDER")
     default_special_provider: str = Field(default="openai", alias="DEFAULT_SPECIAL_PROVIDER")
+
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    claude_plan_model: str = Field(default="claude-sonnet-4-6", alias="CLAUDE_PLAN_MODEL")
+    claude_small_model: str = Field(default="claude-haiku-4-5", alias="CLAUDE_SMALL_MODEL")
 
     deepseek_api_key: str | None = Field(default=None, alias="DEEPSEEK_API_KEY")
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")

@@ -223,18 +223,21 @@ class UIFactoryGraph:
         complexity = state["complexity"]["level"]
         context = state.get("context") or {}
         force_workflow = str(context.get("force_workflow") or "").strip().lower()
-        if force_workflow in {"copilot_small_change", "copilot_plan_then_codex"}:
-            workflow = force_workflow
+        # Accept both old and new workflow names
+        if force_workflow in {"claude_small_change", "copilot_small_change"}:
+            workflow = "claude_small_change"
+            reason = f"Workflow forced by context.force_workflow={force_workflow}."
+        elif force_workflow in {"claude_plan_then_claude", "copilot_plan_then_codex"}:
+            workflow = "claude_plan_then_claude"
             reason = f"Workflow forced by context.force_workflow={force_workflow}."
         else:
-            workflow = "copilot_plan_then_codex" if complexity in {"medium", "complex"} else "copilot_small_change"
-            reason = "Complexity classifier routed this UI to Copilot planning plus Codex execution/integration." if workflow == "copilot_plan_then_codex" else "Complexity classifier routed this UI to direct Copilot execution."
-        steps = ["copilot_plan_parallel", "codex_integrator", "task_execution", "git"] if workflow == "copilot_plan_then_codex" else ["copilot", "git"]
+            workflow = "claude_plan_then_claude" if complexity in {"medium", "complex"} else "claude_small_change"
+            reason = "Complexity classifier routed this UI to Claude planning plus Claude execution." if workflow == "claude_plan_then_claude" else "Complexity classifier routed this UI to direct Claude execution."
+        steps = ["claude_plan_parallel", "claude_integrator", "task_execution", "git"] if workflow == "claude_plan_then_claude" else ["claude", "git"]
         state["tool_strategy"] = {
             "workflow": workflow,
             "steps": steps,
             "reason": reason,
-            "codex_fallback": "copilot",
         }
         return state["tool_strategy"]
 
@@ -316,14 +319,14 @@ class UIFactoryGraph:
         return workspace_plan
 
     async def run_ui_planning(self, state: dict[str, Any]) -> dict[str, Any]:
-        if state["tool_strategy"]["workflow"] != "copilot_plan_then_codex":
+        if state["tool_strategy"]["workflow"] != "claude_plan_then_claude":
             planning = {"skipped": True, "reason": "workflow_does_not_require_planning"}
             state["planning"] = planning
             return planning
 
         objectives = self._build_planning_objectives(state)
         coroutines = [
-            self.terminal.run_copilot_plan(
+            self.terminal.run_claude_plan(
                 objective=item["objective"],
                 cwd=state["workspace"]["cwd"],
                 timeout_seconds=min(self.settings.ui_factory_copilot_plan_timeout_seconds, 1200),
@@ -359,12 +362,12 @@ class UIFactoryGraph:
         return planning
 
     async def consolidate_ui_plan(self, state: dict[str, Any]) -> dict[str, Any]:
-        if state["tool_strategy"]["workflow"] != "copilot_plan_then_codex":
+        if state["tool_strategy"]["workflow"] != "claude_plan_then_claude":
             consolidated = {"skipped": True, "reason": "workflow_does_not_require_consolidation"}
             state["planning_consolidation"] = consolidated
             return consolidated
         objective = self._build_consolidation_objective(state)
-        consolidation_task = await self._run_codex_with_fallback(
+        consolidation_task = await self._run_claude_with_fallback(
             state=state,
             objective=objective,
             cwd=state["workspace"]["cwd"],
@@ -383,13 +386,13 @@ class UIFactoryGraph:
         plan = state["ui_plan"]
         workspace_plan = state["workspace_plan"]
         complexity = state["complexity"]["level"]
-        if state["tool_strategy"]["workflow"] == "copilot_small_change":
+        if state["tool_strategy"]["workflow"] == "claude_small_change":
             tasks = [
                 {
                     "task_id": "task_ui_single",
                     "title": "Apply requested UI update",
                     "status": "pending",
-                    "tool": "copilot",
+                    "tool": "claude",
                     "difficulty": "simple",
                     "target_paths": [item["path"] for item in workspace_plan["files"] if item["kind"] == "ui"],
                 }
@@ -400,7 +403,7 @@ class UIFactoryGraph:
                     "task_id": "task_ui_shell",
                     "title": "Build shell, navigation and layout",
                     "status": "pending",
-                    "tool": "codex" if complexity == "complex" else "copilot",
+                    "tool": "claude_plan",
                     "difficulty": "complex" if complexity == "complex" else "medium",
                     "target_paths": [item["path"] for item in workspace_plan["files"] if "layout" in item["path"] or "shell" in item["path"] or "page" in item["path"]],
                 },
@@ -408,7 +411,7 @@ class UIFactoryGraph:
                     "task_id": "task_ui_data",
                     "title": "Build mock data, filters and state",
                     "status": "pending",
-                    "tool": "copilot",
+                    "tool": "claude",
                     "difficulty": "medium",
                     "target_paths": [item["path"] for item in workspace_plan["files"] if item["kind"] == "data" or "filter" in item["path"] or "table" in item["path"]],
                 },
@@ -416,7 +419,7 @@ class UIFactoryGraph:
                     "task_id": "task_ui_charts",
                     "title": "Build charts, drill-down and visual summaries",
                     "status": "pending",
-                    "tool": "codex" if complexity == "complex" else "copilot",
+                    "tool": "claude_plan",
                     "difficulty": "complex" if complexity == "complex" else "medium",
                     "target_paths": [item["path"] for item in workspace_plan["files"] if "chart" in item["path"] or "Dashboard" in item["path"]],
                 },
@@ -425,7 +428,7 @@ class UIFactoryGraph:
             "tasks": tasks,
             "updated_at": state["run_id"],
             "workspace_plan": workspace_plan,
-            "integration_owner": "codex",
+            "integration_owner": "claude_plan",
             "response_contract": {
                 "final_summary_required": True,
                 "public_url_required": True,
@@ -440,8 +443,8 @@ class UIFactoryGraph:
 
         async def _run_subtask(task: dict[str, Any]) -> dict[str, Any]:
             objective = self._build_task_execution_objective(state, task)
-            if task["tool"] == "codex":
-                result = await self._run_codex_with_fallback(
+            if task["tool"] in {"claude_plan", "codex"}:
+                result = await self._run_claude_with_fallback(
                     state=state,
                     objective=objective,
                     cwd=cwd,
@@ -449,7 +452,7 @@ class UIFactoryGraph:
                     step_name=f"run_ui_execution.{task['task_id']}",
                 )
             else:
-                result = await self.terminal.run_copilot(
+                result = await self.terminal.run_claude(
                     objective=objective,
                     cwd=cwd,
                     timeout_seconds=self.settings.ui_factory_small_change_timeout_seconds,
@@ -475,14 +478,14 @@ class UIFactoryGraph:
 
     async def integrate_ui_work(self, state: dict[str, Any]) -> dict[str, Any]:
         workflow = ((state.get("tool_strategy") or {}).get("workflow") or "").strip()
-        if workflow == "copilot_small_change":
-            integration = {"skipped": True, "reason": "copilot_small_change_workflow"}
+        if workflow == "claude_small_change":
+            integration = {"skipped": True, "reason": "claude_small_change_workflow"}
             state["integration"] = integration
             return integration
         objective = self._build_integration_objective(state)
         cwd = state["workspace"]["cwd"]
         if (state.get("complexity") or {}).get("level") == "complex":
-            integration_task = await self._run_codex_with_fallback(
+            integration_task = await self._run_claude_with_fallback(
                 state=state,
                 objective=objective,
                 cwd=cwd,
@@ -490,7 +493,7 @@ class UIFactoryGraph:
                 step_name="integrate_ui_work",
             )
         else:
-            integration_task = await self.terminal.run_copilot(
+            integration_task = await self.terminal.run_claude(
                 objective=objective,
                 cwd=cwd,
                 timeout_seconds=self.settings.ui_factory_small_change_timeout_seconds,
@@ -1002,7 +1005,7 @@ class UIFactoryGraph:
             "Ensure Dockerfile/build files and runtime entry are correct for the selected framework. "
             "Keep README/app.meta.yaml/deploy.meta.yaml consistent only if needed."
         )
-        fix_task = await self._run_codex_with_fallback(
+        fix_task = await self._run_claude_with_fallback(
             state=state,
             objective=objective,
             cwd=cwd,
@@ -1101,7 +1104,7 @@ class UIFactoryGraph:
     def _supports_public_deployment_record(deployment: dict[str, Any]) -> bool:
         return deployment.get("status") in {"unknown", "deploying", "ready_for_coolify", "deployed", "failed"}
 
-    async def _run_codex_with_fallback(
+    async def _run_claude_with_fallback(
         self,
         *,
         state: dict[str, Any],
@@ -1110,39 +1113,37 @@ class UIFactoryGraph:
         timeout_seconds: int,
         step_name: str,
     ) -> dict[str, Any]:
-        codex_task = await self.terminal.run_codex(
+        claude_plan_task = await self.terminal.run_claude_plan(
             objective=objective,
             cwd=cwd,
             timeout_seconds=timeout_seconds,
         )
-        if self._terminal_task_succeeded(codex_task):
-            return codex_task
-        if not self._codex_fallback_enabled(state):
-            return codex_task
-        copilot_timeout = max(60, min(timeout_seconds, self.settings.ui_factory_small_change_timeout_seconds))
-        copilot_task = await self.terminal.run_copilot(
+        if self._terminal_task_succeeded(claude_plan_task):
+            return claude_plan_task
+        # Fallback to smaller claude model
+        fallback_timeout = max(60, min(timeout_seconds, self.settings.ui_factory_small_change_timeout_seconds))
+        claude_task = await self.terminal.run_claude(
             objective=objective,
             cwd=cwd,
-            timeout_seconds=copilot_timeout,
+            timeout_seconds=fallback_timeout,
         )
-        if self._terminal_task_succeeded(copilot_task):
-            metadata = (copilot_task.get("metadata") or {}) if isinstance(copilot_task, dict) else {}
+        if self._terminal_task_succeeded(claude_task):
+            metadata = (claude_task.get("metadata") or {}) if isinstance(claude_task, dict) else {}
             metadata.update(
                 {
-                    "fallback_from": "codex",
+                    "fallback_from": "claude_plan",
                     "fallback_step": step_name,
-                    "fallback_command": self._codex_fallback_command(state),
-                    "codex_error": (codex_task.get("error") if isinstance(codex_task, dict) else None),
+                    "claude_plan_error": (claude_plan_task.get("error") if isinstance(claude_plan_task, dict) else None),
                 }
             )
-            if isinstance(copilot_task, dict):
-                copilot_task["metadata"] = metadata
-            return copilot_task
-        if isinstance(codex_task, dict):
-            result = codex_task.get("result") or {}
-            result["fallback_error"] = (copilot_task or {}).get("error") if isinstance(copilot_task, dict) else "copilot_fallback_failed"
-            codex_task["result"] = result
-        return codex_task
+            if isinstance(claude_task, dict):
+                claude_task["metadata"] = metadata
+            return claude_task
+        if isinstance(claude_plan_task, dict):
+            result = claude_plan_task.get("result") or {}
+            result["fallback_error"] = (claude_task or {}).get("error") if isinstance(claude_task, dict) else "claude_fallback_failed"
+            claude_plan_task["result"] = result
+        return claude_plan_task
 
     @staticmethod
     def _terminal_task_succeeded(task: dict[str, Any] | None) -> bool:

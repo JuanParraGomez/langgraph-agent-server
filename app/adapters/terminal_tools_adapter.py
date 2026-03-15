@@ -27,9 +27,9 @@ class TerminalToolsAdapter(HttpAdapter):
     async def inspect_task(self, task_id: str) -> dict[str, Any]:
         return await self._get(f"/tasks/{task_id}")
 
-    async def run_copilot_plan(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
+    async def run_claude(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
         return await self._post(
-            "/run/copilot-plan",
+            "/run/claude",
             {
                 "user_goal": objective,
                 "execution_mode": "sync",
@@ -38,30 +38,28 @@ class TerminalToolsAdapter(HttpAdapter):
             },
             timeout_seconds=self._effective_timeout(timeout_seconds),
         )
+
+    async def run_claude_plan(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 1800) -> dict[str, Any]:
+        return await self._post(
+            "/run/claude-plan",
+            {
+                "user_goal": objective,
+                "execution_mode": "sync",
+                "cwd": cwd,
+                "timeout_seconds": timeout_seconds,
+            },
+            timeout_seconds=self._effective_timeout(timeout_seconds),
+        )
+
+    # Legacy aliases — delegate to claude equivalents
+    async def run_copilot_plan(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
+        return await self.run_claude_plan(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
 
     async def run_copilot(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
-        return await self._post(
-            "/run/copilot",
-            {
-                "user_goal": objective,
-                "execution_mode": "sync",
-                "cwd": cwd,
-                "timeout_seconds": timeout_seconds,
-            },
-            timeout_seconds=self._effective_timeout(timeout_seconds),
-        )
+        return await self.run_claude(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
 
     async def run_codex(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 1800) -> dict[str, Any]:
-        return await self._post(
-            "/run/codex",
-            {
-                "user_goal": objective,
-                "execution_mode": "sync",
-                "cwd": cwd,
-                "timeout_seconds": timeout_seconds,
-            },
-            timeout_seconds=self._effective_timeout(timeout_seconds),
-        )
+        return await self.run_claude_plan(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
 
     async def run_command(
         self,

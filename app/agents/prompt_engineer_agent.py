@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.deepseek_service import DeepSeekService
+from app.services.claude_api_service import ClaudeApiService
 
 
 class PromptEngineerAgent:
     name = "prompt_engineer_agent"
 
-    def __init__(self, deepseek_service: DeepSeekService | None = None) -> None:
-        self.deepseek_service = deepseek_service
+    def __init__(self, claude_service: ClaudeApiService | None = None) -> None:
+        self.claude_service = claude_service
 
     async def run(
         self,
@@ -25,9 +25,9 @@ class PromptEngineerAgent:
         workflow = self._select_workflow(text=text, complexity=complexity)
         similar_summary = self._summarize_similar(similar_results)
 
-        if self.deepseek_service and self.deepseek_service.available():
+        if self.claude_service and self.claude_service.available():
             try:
-                generated = await self.deepseek_service.generate_prompt_package(
+                generated = await self.claude_service.generate_prompt_package(
                     goal=goal,
                     agent_name=agent_name,
                     current_version=current_version,
@@ -49,7 +49,7 @@ class PromptEngineerAgent:
                         "rag_learning_text": generated.get("rag_learning_text", ""),
                     },
                     "similar_summary": similar_summary,
-                    "provider_used": generated.get("provider_used", "deepseek"),
+                    "provider_used": generated.get("provider_used", "anthropic"),
                     "model_used": generated.get("model_used"),
                     "rationale": generated.get("rationale"),
                 }
@@ -80,49 +80,36 @@ class PromptEngineerAgent:
 
     def _select_workflow(self, text: str, complexity: int) -> str:
         if any(token in text for token in ["plan", "arquitect", "estrateg", "diseña", "diseña"]) and complexity >= 4:
-            return "copilot_plan_then_codex"
+            return "claude_plan_then_claude"
         if complexity >= 4 or any(token in text for token in ["varios archivos", "itera", "estabiliza", "multiarchivo", "refactor grande"]):
-            return "copilot_plan_then_codex"
+            return "claude_plan_then_claude"
         if any(token in text for token in ["test pequeño", "cambio puntual", "fix corto", "bug pequeño", "ajuste corto"]) or complexity <= 2:
-            return "copilot_small_change"
-        return "copilot_plan_then_codex"
+            return "claude_small_change"
+        return "claude_plan_then_claude"
 
     def _recommended_sequence(self, workflow: str) -> list[dict[str, Any]]:
-        if workflow == "copilot_small_change":
+        if workflow == "claude_small_change":
             return [
                 {
                     "step": 1,
                     "tool": "terminal-tools",
-                    "endpoint": "/run/copilot",
-                    "purpose": "Apply a small code change with the cheapest Copilot profile available",
-                },
-                {
-                    "step": 2,
-                    "tool": "terminal-tools",
-                    "endpoint": "/run/codex",
-                    "optional": True,
-                    "purpose": "Only escalate if Copilot leaves the task incomplete or tests unstable",
+                    "endpoint": "/run/claude",
+                    "purpose": "Apply a small code change using Claude Haiku (fast, cheap)",
                 },
             ]
         return [
             {
                 "step": 1,
                 "tool": "terminal-tools",
-                "endpoint": "/run/copilot-plan",
-                "purpose": "Produce plan with cheap-model policy: Claude Haiku 4.5 for planning",
+                "endpoint": "/run/claude-plan",
+                "purpose": "Plan and apply multi-step code changes using Claude Sonnet",
             },
             {
                 "step": 2,
                 "tool": "terminal-tools",
-                "endpoint": "/run/codex",
-                "purpose": "Execute the multi-step code change iteratively until stable",
-            },
-            {
-                "step": 3,
-                "tool": "terminal-tools",
-                "endpoint": "/run/copilot",
+                "endpoint": "/run/claude",
                 "optional": True,
-                "purpose": "Use Copilot for cheap follow-up fixes or micro-edits after Codex finishes",
+                "purpose": "Use Claude Haiku for follow-up fixes or micro-edits",
             },
         ]
 
@@ -140,7 +127,7 @@ class PromptEngineerAgent:
                 f"Goal: {goal}",
                 f"Constraints: {context.get('constraints') or 'Keep the change minimal and testable.'}",
                 f"ExistingSimilarWork: {similar_summary}",
-                "ModelPolicy: use only GPT-5 mini or GPT-4.1 for Copilot coding; use Claude Haiku 4.5 for planning/review.",
+                "ModelPolicy: use Claude Haiku 4.5 for small/fast tasks; use Claude Sonnet 4.6 for planning, architecture, and complex code execution.",
                 "Return only a concrete implementation plan.",
                 "Include impacted files, order of work, validation steps, rollback notes, and risk checkpoints.",
                 "Do not edit files in this phase.",
@@ -163,7 +150,7 @@ class PromptEngineerAgent:
                 f"Workflow: {workflow}",
                 f"ExistingSimilarWork: {similar_summary}",
                 f"AcceptanceCriteria: {context.get('acceptance_criteria') or 'Tests for the touched behavior must pass.'}",
-                "ModelPolicy: use only GPT-5 mini or GPT-4.1 for Copilot coding; use Claude Haiku 4.5 for planning/review.",
+                "ModelPolicy: use Claude Haiku 4.5 for small/fast tasks; use Claude Sonnet 4.6 for planning, architecture, and complex code execution.",
                 "Prefer the smallest correct change.",
                 "If the task spans multiple files or requires stabilization, iterate until the result is consistent.",
                 "At the end, summarize exactly what changed, how it works, and what remains risky.",
@@ -197,8 +184,8 @@ class PromptEngineerAgent:
                 f"Goal: {goal}",
                 f"SimilarContext: {similar_summary}",
                 "Learning:",
-                "- For complex code tasks, route first to Copilot plan mode and then execute with Codex.",
-                "- For small code fixes, prefer cheap Copilot execution before escalating.",
+                "- For complex code tasks, route to Claude Sonnet (claude-plan endpoint) for planning and execution.",
+                "- For small code fixes, prefer Claude Haiku (claude endpoint) before escalating.",
                 "- Persist implementation notes, validation summary, and remaining risks after execution.",
             ]
         )
