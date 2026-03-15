@@ -17,7 +17,7 @@ from app.agents.memory_review_agent import MemoryReviewAgent
 from app.agents.failure_recovery_agent import FailureRecoveryAgent
 from app.core.settings import get_settings
 from app.services.capabilities_service import CapabilitiesService
-from app.services.claude_api_service import ClaudeApiService
+from app.services.deepseek_service import DeepSeekService
 from app.services.provider_service import ProviderService
 from app.services.run_service import RunService
 from app.storage.run_store import RunStore
@@ -35,8 +35,8 @@ def get_provider_service() -> ProviderService:
 
 
 @lru_cache(maxsize=1)
-def get_claude_api_service() -> ClaudeApiService:
-    return ClaudeApiService(get_settings())
+def get_deepseek_service() -> DeepSeekService:
+    return DeepSeekService(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -103,7 +103,7 @@ def get_synthesis_agent() -> SynthesisAgent:
 
 @lru_cache(maxsize=1)
 def get_prompt_engineer_agent() -> PromptEngineerAgent:
-    return PromptEngineerAgent(get_claude_api_service())
+    return PromptEngineerAgent(get_deepseek_service())
 
 
 @lru_cache(maxsize=1)

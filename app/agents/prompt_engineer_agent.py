@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.claude_api_service import ClaudeApiService
+from app.services.deepseek_service import DeepSeekService
 
 
 class PromptEngineerAgent:
     name = "prompt_engineer_agent"
 
-    def __init__(self, claude_service: ClaudeApiService | None = None) -> None:
-        self.claude_service = claude_service
+    def __init__(self, deepseek_service: DeepSeekService | None = None) -> None:
+        self.deepseek_service = deepseek_service
 
     async def run(
         self,
@@ -25,9 +25,9 @@ class PromptEngineerAgent:
         workflow = self._select_workflow(text=text, complexity=complexity)
         similar_summary = self._summarize_similar(similar_results)
 
-        if self.claude_service and self.claude_service.available():
+        if self.deepseek_service and self.deepseek_service.available():
             try:
-                generated = await self.claude_service.generate_prompt_package(
+                generated = await self.deepseek_service.generate_prompt_package(
                     goal=goal,
                     agent_name=agent_name,
                     current_version=current_version,
@@ -49,7 +49,7 @@ class PromptEngineerAgent:
                         "rag_learning_text": generated.get("rag_learning_text", ""),
                     },
                     "similar_summary": similar_summary,
-                    "provider_used": generated.get("provider_used", "anthropic"),
+                    "provider_used": generated.get("provider_used", "deepseek"),
                     "model_used": generated.get("model_used"),
                     "rationale": generated.get("rationale"),
                 }
