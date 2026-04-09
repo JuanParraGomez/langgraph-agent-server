@@ -63,6 +63,11 @@ class AgentRegistry:
                 description="Aggregate outputs into coherent response",
             ),
             AgentCapability(
+                agent_name="code_agent",
+                capabilities=["code", "programming", "debug", "refactor", "implement", "test", "copilot", "codex"],
+                description="Code generation and debugging via GitHub Copilot (openai-codex)",
+            ),
+            AgentCapability(
                 agent_name="coordinator_agent",
                 capabilities=["coordinate", "decompose", "orchestrate", "delegate"],
                 description="Task decomposition and multi-agent coordination",
