@@ -28,8 +28,9 @@ class TerminalToolsAdapter(HttpAdapter):
         return await self._get(f"/tasks/{task_id}")
 
     async def run_claude(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
+        # Delegate to copilot endpoint — Claude CLI removed, Copilot (openai-codex) is the code runner
         return await self._post(
-            "/run/claude",
+            "/run/copilot",
             {
                 "user_goal": objective,
                 "execution_mode": "sync",
@@ -40,8 +41,9 @@ class TerminalToolsAdapter(HttpAdapter):
         )
 
     async def run_claude_plan(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 1800) -> dict[str, Any]:
+        # Delegate to copilot-plan endpoint — Claude CLI removed
         return await self._post(
-            "/run/claude-plan",
+            "/run/copilot-plan",
             {
                 "user_goal": objective,
                 "execution_mode": "sync",

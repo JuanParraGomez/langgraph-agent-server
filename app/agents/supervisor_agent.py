@@ -46,12 +46,13 @@ Rules:
 - Select the minimum agents needed. Don't use agents unnecessarily.
 - synthesis_agent is always appended automatically — do not include it.
 - Order matters: agents execute sequentially in the order listed.
-- For code tasks, prefer terminal_agent (which can invoke Claude CLI).
-- For research/docs, prefer research_agent.
-- For ops/deploy/scripts, prefer script_ops_agent.
+- For CODE tasks (programming, debugging, refactoring, tests, scripts):
+    use terminal_agent with copilot_mode=true for best results.
+- For research/docs/retrieval, prefer research_agent.
+- For ops/deploy/scripts/cron, prefer script_ops_agent.
 
 Return ONLY valid JSON with this schema:
-{{"plan": ["step 1 description", "step 2 description"], "selected_agents": ["agent_name_1", "agent_name_2"], "rationale": "brief reason"}}
+{{"plan": ["step 1 description", "step 2 description"], "selected_agents": ["agent_name_1", "agent_name_2"], "rationale": "brief reason", "copilot_for_code": true|false}}
 """
 
 
@@ -101,24 +102,31 @@ class SupervisorAgent:
         steps: list[str] = []
         selected_agents: list[str] = []
 
+        # CODE tasks → terminal_agent with Copilot mode
+        is_code_task = any(k in text for k in [
+            "code", "debug", "refactor", "implement", "función", "function",
+            "class", "test", "typescript", "python", "javascript", "build",
+            "compile", "lint", "fix", "error", "bug", "script", "repo",
+        ])
+        if is_code_task:
+            steps.append("Execute code task via terminal-tools using Copilot endpoint")
+            selected_agents.append("terminal_agent")
+
         if any(k in text for k in ["investiga", "research", "document", "rag", "contexto", "busca", "find"]):
             steps.append("Collect documentary context from rag-server")
             selected_agents.append("research_agent")
 
-        if any(k in text for k in ["terminal", "repo", "inspeccion", "inspección", "logs", "archivo", "code", "file"]):
+        if not is_code_task and any(k in text for k in ["terminal", "inspeccion", "logs", "archivo", "file"]):
             steps.append("Run operational inspection through terminal-tools")
             selected_agents.append("terminal_agent")
 
-        if any(k in text for k in ["script", ".sh", "deploy", "backup", "schedule", "job", "cron"]):
+        if any(k in text for k in [".sh", "deploy", "backup", "schedule", "job", "cron"]):
             steps.append("Execute script operations through celery-server")
             selected_agents.append("script_ops_agent")
 
         if not steps:
-            steps = [
-                "Collect concise context from rag-server",
-                "Perform lightweight terminal inspection",
-            ]
-            selected_agents = ["research_agent", "terminal_agent"]
+            steps = ["Collect concise context from rag-server"]
+            selected_agents = ["research_agent"]
 
         selected_agents.append("synthesis_agent")
 
@@ -127,6 +135,7 @@ class SupervisorAgent:
             "selected_agents": selected_agents,
             "planner_used": "supervisor_v1_heuristic",
             "context_keys": list(context.keys()),
+            "copilot_for_code": is_code_task,
         }
 
     @staticmethod
