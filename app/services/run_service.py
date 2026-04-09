@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from app.agents.code_agent import CodeAgent
 from app.agents.research_agent import ResearchAgent
 from app.agents.memory_review_agent import MemoryReviewAgent
 from app.agents.failure_recovery_agent import FailureRecoveryAgent
@@ -57,6 +58,7 @@ class RunService:
         rag_adapter: RagServerAdapter,
         hapi_client: HapiClient,
         settings: Settings,
+        code: CodeAgent | None = None,
     ) -> None:
         self.store = store
         self.provider_service = provider_service
@@ -77,6 +79,7 @@ class RunService:
             terminal=terminal,
             script_ops=script_ops,
             synthesis=synthesis,
+            code=code,
         )
         self.ui_factory = UIFactoryGraph(
             settings=settings,

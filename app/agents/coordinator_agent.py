@@ -38,12 +38,14 @@ DECOMPOSE_SYSTEM = """\
 You are a task decomposition engine for a multi-agent system. Break down the user's command \
 into independent sub-tasks that can be delegated to specialized agents.
 
-Available agents: research_agent, terminal_agent, script_ops_agent, memory_review_agent, prompt_engineer_agent
+Available agents: research_agent, terminal_agent, script_ops_agent, memory_review_agent, prompt_engineer_agent, code_agent
 
 Rules:
 - Each sub-task has: id (short), description, agent, depends_on (list of sub-task ids)
 - Minimize sub-tasks. Only split when genuinely parallel or when different agents are needed.
 - Use depends_on for ordering. Empty means can run immediately.
+- For CODE tasks (programming, debugging, implementing, refactoring, tests): use code_agent (GitHub Copilot/openai-codex).
+- For system ops, shell, file inspection: use terminal_agent.
 
 Return JSON: {"subtasks": [{"id": "t1", "description": "...", "agent": "...", "depends_on": []}]}
 """
@@ -223,10 +225,18 @@ class CoordinatorAgent:
         text = command.lower()
         subtasks: list[SubTask] = []
 
+        # CODE tasks → code_agent (Copilot/openai-codex)
+        is_code = any(k in text for k in [
+            "code", "implement", "debug", "refactor", "función", "function", "class",
+            "test", "typescript", "python", "javascript", "build", "compile", "fix", "bug",
+        ])
+        if is_code:
+            subtasks.append(SubTask(id="code", description=f"Code task: {command}", agent="code_agent"))
+
         if any(k in text for k in ["investiga", "research", "busca", "find", "document"]):
             subtasks.append(SubTask(id="research", description=f"Research: {command}", agent="research_agent"))
 
-        if any(k in text for k in ["code", "file", "repo", "terminal", "inspect", "log"]):
+        if not is_code and any(k in text for k in ["file", "repo", "terminal", "inspect", "log"]):
             subtasks.append(SubTask(
                 id="terminal",
                 description=f"Terminal inspection: {command}",
@@ -240,7 +250,6 @@ class CoordinatorAgent:
         if not subtasks:
             subtasks = [
                 SubTask(id="research", description=f"Gather context: {command}", agent="research_agent"),
-                SubTask(id="terminal", description=f"Inspect: {command}", agent="terminal_agent", depends_on=["research"]),
             ]
 
         return subtasks

@@ -7,6 +7,7 @@ from app.adapters.hapi_client import HapiClient
 from app.adapters.rag_server_adapter import RagServerAdapter
 from app.adapters.terminal_tools_adapter import TerminalToolsAdapter
 from app.adapters.voice_pair_adapter import VoicePairAdapter
+from app.agents.code_agent import CodeAgent
 from app.agents.research_agent import ResearchAgent
 from app.agents.script_ops_agent import ScriptOpsAgent
 from app.agents.supervisor_agent import SupervisorAgent
@@ -89,6 +90,11 @@ def get_memory_review_agent() -> MemoryReviewAgent:
 
 
 @lru_cache(maxsize=1)
+def get_code_agent() -> CodeAgent:
+    return CodeAgent(get_terminal_adapter())
+
+
+@lru_cache(maxsize=1)
 def get_terminal_agent() -> TerminalAgent:
     return TerminalAgent(get_terminal_adapter())
 
@@ -142,6 +148,7 @@ def get_run_service() -> RunService:
         rag_adapter=get_rag_adapter(),
         hapi_client=get_hapi_client(),
         settings=get_settings(),
+        code=get_code_agent(),
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
+from app.agents.code_agent import CodeAgent
 from app.agents.research_agent import ResearchAgent
 from app.agents.script_ops_agent import ScriptOpsAgent
 from app.agents.supervisor_agent import SupervisorAgent
@@ -38,12 +39,14 @@ class ComplexTaskGraph:
         terminal: TerminalAgent,
         script_ops: ScriptOpsAgent,
         synthesis: SynthesisAgent,
+        code: CodeAgent | None = None,
     ) -> None:
         self.supervisor = supervisor
         self.research = research
         self.terminal = terminal
         self.script_ops = script_ops
         self.synthesis = synthesis
+        self.code = code
         self.graph = self._build_graph() if LANGGRAPH_AVAILABLE else None
 
     def _build_graph(self):
@@ -88,7 +91,14 @@ class ComplexTaskGraph:
             final = await self.synthesis.run(goal=state["goal"], plan=state.get("plan", {}), outputs=state.get("outputs", {}))
             return {"final": final}
 
-        def next_step(state: GraphState) -> Literal["research", "terminal", "script_ops", "synthesis"]:
+        async def code_node(state: GraphState) -> GraphState:
+            out = dict(state.get("outputs", {}))
+            agent = self.code or self.terminal  # fallback to terminal if code_agent missing
+            if hasattr(agent, "run"):
+                out["code"] = await agent.run(goal=state["goal"])
+            return {"outputs": out, "next_agent_idx": state.get("next_agent_idx", 0) + 1, "iterations": state.get("iterations", 0) + 1}
+
+        def next_step(state: GraphState) -> Literal["code", "research", "terminal", "script_ops", "synthesis"]:
             idx = state.get("next_agent_idx", 0)
             agents = state.get("active_agents", [])
             if idx >= len(agents):
@@ -98,6 +108,8 @@ class ComplexTaskGraph:
                 return "synthesis"
 
             agent = agents[idx]
+            if agent == "code_agent":
+                return "code"
             if agent == "research_agent":
                 return "research"
             if agent == "terminal_agent":
@@ -108,6 +120,7 @@ class ComplexTaskGraph:
 
         graph.add_node("supervisor", supervisor_node)
         graph.add_node("route", route_node)
+        graph.add_node("code", code_node)
         graph.add_node("research", research_node)
         graph.add_node("terminal", terminal_node)
         graph.add_node("script_ops", script_ops_node)
@@ -116,6 +129,7 @@ class ComplexTaskGraph:
         graph.set_entry_point("supervisor")
         graph.add_edge("supervisor", "route")
         graph.add_conditional_edges("route", next_step)
+        graph.add_edge("code", "route")
         graph.add_edge("research", "route")
         graph.add_edge("terminal", "route")
         graph.add_edge("script_ops", "route")
@@ -135,6 +149,8 @@ class ComplexTaskGraph:
                         tenant_id=context.get("tenant_id"),
                         filters=context.get("filters", {}),
                     )
+                elif agent_name == "code_agent":
+                    outputs["code"] = await (self.code or self.terminal).run(goal=goal)
                 elif agent_name == "terminal_agent":
                     outputs["terminal"] = await self.terminal.run(task=goal)
                 elif agent_name == "script_ops_agent":
