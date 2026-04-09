@@ -15,9 +15,11 @@ from app.agents.terminal_agent import TerminalAgent
 from app.agents.prompt_engineer_agent import PromptEngineerAgent
 from app.agents.memory_review_agent import MemoryReviewAgent
 from app.agents.failure_recovery_agent import FailureRecoveryAgent
+from app.agents.coordinator_agent import CoordinatorAgent
 from app.core.settings import get_settings
 from app.services.capabilities_service import CapabilitiesService
 from app.services.deepseek_service import DeepSeekService
+from app.services.blackboard_service import Blackboard
 from app.services.provider_service import ProviderService
 from app.services.run_service import RunService
 from app.storage.run_store import RunStore
@@ -71,7 +73,7 @@ def get_voice_pair_adapter() -> VoicePairAdapter:
 
 @lru_cache(maxsize=1)
 def get_supervisor_agent() -> SupervisorAgent:
-    return SupervisorAgent()
+    return SupervisorAgent(deepseek_service=get_deepseek_service())
 
 
 @lru_cache(maxsize=1)
@@ -109,6 +111,19 @@ def get_prompt_engineer_agent() -> PromptEngineerAgent:
 @lru_cache(maxsize=1)
 def get_failure_recovery_agent() -> FailureRecoveryAgent:
     return FailureRecoveryAgent()
+
+
+@lru_cache(maxsize=1)
+def get_blackboard() -> Blackboard:
+    return Blackboard(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_coordinator_agent() -> CoordinatorAgent:
+    return CoordinatorAgent(
+        deepseek_service=get_deepseek_service(),
+        blackboard=get_blackboard(),
+    )
 
 
 @lru_cache(maxsize=1)

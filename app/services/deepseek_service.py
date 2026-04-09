@@ -78,6 +78,41 @@ class DeepSeekService:
         parsed["model_used"] = self.settings.deepseek_text_model
         return parsed
 
+    async def chat_completion(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        model: str | None = None,
+    ) -> str:
+        """Generic chat completion — returns raw assistant content string."""
+        if not self.available():
+            raise RuntimeError("deepseek_unavailable")
+
+        payload = {
+            "model": model or self.settings.deepseek_text_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+        }
+
+        async with httpx.AsyncClient(timeout=self.settings.deepseek_timeout_seconds) as client:
+            response = await client.post(
+                f"{self.settings.deepseek_base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.settings.deepseek_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        return data["choices"][0]["message"]["content"]
+
     def _parse_json_content(self, content: str) -> dict[str, Any]:
         try:
             return json.loads(content)

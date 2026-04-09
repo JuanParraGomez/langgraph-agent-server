@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,14 @@ class UIFactoryRequest(BaseModel):
     resume_run_id: str | None = None
 
 
+class BotFactoryRequest(BaseModel):
+    name: str = Field(min_length=1)
+    telegram_token: str = Field(min_length=5)
+    personality: str = Field(min_length=3)
+    bot_display_name: str | None = None
+    emoji: str | None = None
+
+
 class CancelRunRequest(BaseModel):
     reason: str | None = None
 
@@ -90,6 +99,12 @@ class TerminalSubtaskRequest(BaseModel):
 class ScriptOpsSubtaskRequest(BaseModel):
     action: str = Field(min_length=2)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CodeExecutionRequest(BaseModel):
+    objective: str = Field(min_length=2)
+    cwd: str | None = None
+    complexity: int = Field(default=3, ge=1, le=5)
 
 
 class SummarizeFindingsRequest(BaseModel):
@@ -146,3 +161,17 @@ class AgentToolResponse(BaseModel):
     ok: bool = True
     tool: str
     data: dict[str, Any]
+
+
+class OnboardingRequest(BaseModel):
+    session_id: str = Field(default_factory=lambda: str(uuid4()))
+    existing_profile: dict | None = Field(default=None)
+
+
+class PersonalCoachRequest(BaseModel):
+    context_type: str = Field(
+        default="morning_briefing",
+        description="morning_briefing | evening_checkin | weekly_review",
+    )
+    send_to_telegram: bool = Field(default=False)
+    telegram_chat_id: str | None = Field(default=None)

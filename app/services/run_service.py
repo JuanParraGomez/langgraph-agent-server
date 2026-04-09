@@ -16,9 +16,16 @@ from app.adapters.hapi_client import HapiClient
 from app.adapters.rag_server_adapter import RagServerAdapter
 from app.core.settings import Settings
 from app.graphs.complex_graph import ComplexTaskGraph, LANGGRAPH_AVAILABLE
+from app.graphs.code_graph import CodeExecutionGraph
+from app.graphs.onboarding_graph import OnboardingGraph
+from app.graphs.personal_coach_graph import PersonalCoachGraph
+from app.graphs.bot_factory_graph import BotFactoryCancelledError, BotFactoryGraph, BotFactoryStepError
 from app.graphs.ui_factory_graph import UIFactoryCancelledError, UIFactoryGraph, UIFactoryStepError
 from app.models.schemas import (
+    BotFactoryRequest,
     ComplexTaskRequest,
+    OnboardingRequest,
+    PersonalCoachRequest,
     PlanTaskRequest,
     PromptWorkflowRequest,
     ResearchSubtaskRequest,
@@ -79,6 +86,15 @@ class RunService:
             recovery=failure_recovery,
             is_cancelled=store.is_cancelled,
         )
+        self.bot_factory = BotFactoryGraph(
+            settings=settings,
+            terminal=terminal.terminal_adapter,
+            recovery=failure_recovery,
+            is_cancelled=store.is_cancelled,
+        )
+        self.onboarding_graph = OnboardingGraph()
+        self.personal_coach_graph = PersonalCoachGraph(settings=settings)
+        self.code_graph = CodeExecutionGraph(terminal=terminal.terminal_adapter)
 
     async def run_complex(self, req: ComplexTaskRequest) -> RunRecord:
         run = self._create_pending_run(goal=req.goal, graph="supervisor_v1")
@@ -330,6 +346,99 @@ class RunService:
         if final_run is None:
             raise RuntimeError("run not found after ui factory")
         return final_run
+
+    async def run_bot_factory(self, req: BotFactoryRequest) -> RunRecord:
+        run = self._create_pending_run(goal=f"Create bot: {req.name}", graph="bot_factory_v1")
+        started_at = datetime.now(timezone.utc)
+        self.store.update_run(run.run_id, status=RunStatus.running, started_at=started_at)
+        self.store.append_log(run.run_id, "bot_factory_started", {"name": req.name})
+
+        def _log(event: str, payload: dict[str, Any]) -> None:
+            self.store.append_log(run.run_id, event, payload)
+
+        try:
+            state = await invoke_graph_traced(
+                "bot_factory_graph_run",
+                self.bot_factory.run,
+                request=req.model_dump(mode="python"),
+                run_id=run.run_id,
+                previous_state=None,
+                log=_log,
+                trace_tags=["graph:bot_factory_v1", "run:bot_factory"],
+                trace_metadata=self._trace_metadata(run_id=run.run_id, name=req.name),
+            )
+            final = state.get("final_result", {})
+            self.store.update_run(
+                run.run_id,
+                status=RunStatus.succeeded,
+                finished_at=datetime.now(timezone.utc),
+                selected_agents=BotFactoryGraph.STEPS,
+                providers_used=[],
+                external_tools_used=["terminal-tools"],
+                summary=final.get("summary", "Bot factory completed"),
+                result={"state": state, "final": final},
+            )
+        except BotFactoryCancelledError as exc:
+            partial_state = locals().get("state", {})
+            self.store.update_run(
+                run.run_id,
+                status=RunStatus.cancelled,
+                finished_at=datetime.now(timezone.utc),
+                selected_agents=["bot_factory_v1"],
+                external_tools_used=["terminal-tools"],
+                error=str(exc),
+                result={"state": partial_state, "cancelled_step": exc.step},
+            )
+            self.store.append_log(run.run_id, "bot_factory_cancelled", {"step": exc.step})
+        except BotFactoryStepError as exc:
+            partial_state = locals().get("state", {})
+            self.store.append_log(
+                run.run_id,
+                "bot_factory_failure_detail",
+                {
+                    "failed_step": exc.step,
+                    "error": str(exc),
+                    "partial_state_keys": sorted(partial_state.keys()) if isinstance(partial_state, dict) else [],
+                },
+            )
+            self.store.update_run(
+                run.run_id,
+                status=RunStatus.failed,
+                finished_at=datetime.now(timezone.utc),
+                selected_agents=["bot_factory_v1"],
+                external_tools_used=["terminal-tools"],
+                error=f"{exc.step}:{exc}",
+                result={"state": partial_state, "failed_step": exc.step},
+            )
+            self.store.append_log(run.run_id, "bot_factory_failed", {"step": exc.step, "error": str(exc)})
+        except Exception as exc:
+            self.store.update_run(
+                run.run_id,
+                status=RunStatus.failed,
+                finished_at=datetime.now(timezone.utc),
+                selected_agents=["bot_factory_v1"],
+                external_tools_used=["terminal-tools"],
+                error=str(exc),
+            )
+            self.store.append_log(run.run_id, "bot_factory_failed", {"error": str(exc)})
+
+        final_run = self.store.get_run(run.run_id)
+        if final_run is None:
+            raise RuntimeError("run not found after bot factory")
+        return final_run
+
+    async def run_onboarding(self, req: OnboardingRequest) -> dict[str, Any]:
+        return await self.onboarding_graph.run(
+            session_id=req.session_id,
+            existing_profile=req.existing_profile,
+        )
+
+    async def run_personal_coach(self, req: PersonalCoachRequest) -> dict[str, Any]:
+        return await self.personal_coach_graph.run(
+            context_type=req.context_type,
+            send_to_telegram=req.send_to_telegram,
+            telegram_chat_id=req.telegram_chat_id,
+        )
 
     def cancel_run(self, run_id: str, reason: str | None = None) -> RunRecord | None:
         return self.store.cancel_run(run_id, reason)
