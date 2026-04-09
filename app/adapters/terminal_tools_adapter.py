@@ -53,15 +53,25 @@ class TerminalToolsAdapter(HttpAdapter):
             timeout_seconds=self._effective_timeout(timeout_seconds),
         )
 
-    # Legacy aliases — delegate to claude equivalents
+    async def run_codex(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 1800) -> dict[str, Any]:
+        """Run a code task via GitHub Copilot (openai-codex) endpoint."""
+        return await self._post(
+            "/run/codex",
+            {
+                "user_goal": objective,
+                "execution_mode": "sync",
+                "cwd": cwd,
+                "timeout_seconds": timeout_seconds,
+            },
+            timeout_seconds=self._effective_timeout(timeout_seconds),
+        )
+
+    # Legacy aliases — kept for backward compat; canonical methods are run_copilot / run_claude
     async def run_copilot_plan(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
         return await self.run_claude_plan(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
 
     async def run_copilot(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 900) -> dict[str, Any]:
         return await self.run_claude(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
-
-    async def run_codex(self, *, objective: str, cwd: str | None = None, timeout_seconds: int = 1800) -> dict[str, Any]:
-        return await self.run_claude_plan(objective=objective, cwd=cwd, timeout_seconds=timeout_seconds)
 
     async def run_command(
         self,

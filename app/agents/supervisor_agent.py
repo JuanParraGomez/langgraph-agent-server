@@ -18,6 +18,10 @@ AVAILABLE_AGENTS = [
         "capabilities": "Shell commands, file inspection, repo operations via terminal-tools",
     },
     {
+        "name": "code_agent",
+        "capabilities": "Code generation, debugging, refactoring, tests via GitHub Copilot (openai-codex)",
+    },
+    {
         "name": "script_ops_agent",
         "capabilities": "Script execution, scheduled jobs, deploy ops via celery-server",
     },
@@ -46,8 +50,9 @@ Rules:
 - Select the minimum agents needed. Don't use agents unnecessarily.
 - synthesis_agent is always appended automatically — do not include it.
 - Order matters: agents execute sequentially in the order listed.
-- For CODE tasks (programming, debugging, refactoring, tests, scripts):
-    use terminal_agent with copilot_mode=true for best results.
+- For CODE tasks (programming, debugging, refactoring, tests, implementing):
+    use code_agent (GitHub Copilot / openai-codex).
+- For system ops, shell, file inspection, logs: use terminal_agent.
 - For research/docs/retrieval, prefer research_agent.
 - For ops/deploy/scripts/cron, prefer script_ops_agent.
 

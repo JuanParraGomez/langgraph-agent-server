@@ -103,7 +103,7 @@ class ScriptOpsSubtaskRequest(BaseModel):
 
 class CodeExecutionRequest(BaseModel):
     objective: str = Field(min_length=2)
-    cwd: str | None = None
+    cwd: str | None = Field(default=None, pattern=r'^(/[^/\0]+)+/?$|^$')
     complexity: int = Field(default=3, ge=1, le=5)
 
 

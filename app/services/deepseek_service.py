@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import httpx
 
 from app.core.settings import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class DeepSeekService:
@@ -31,10 +34,10 @@ class DeepSeekService:
         system_prompt = (
             "You are a senior software staff engineer that designs prompt packages for code agents. "
             "Return strict JSON only. Choose one workflow from: "
-            "claude_small_change, claude_plan_then_claude. "
-            "Small code fixes should prefer claude_small_change. "
-            "Complex or multi-file code tasks should prefer claude_plan_then_claude. "
-            "For code execution, all tasks route to Claude (Haiku for small, Sonnet for complex). "
+            "copilot_small_change, copilot_plan_then_execute. "
+            "Small code fixes should prefer copilot_small_change. "
+            "Complex or multi-file code tasks should prefer copilot_plan_then_execute. "
+            "For code execution, all tasks route to GitHub Copilot (openai-codex). "
             "The output JSON must include keys: workflow, rationale, planning_prompt, execution_prompt, "
             "validation_prompt, rag_learning_text, recommended_sequence."
         )
@@ -85,14 +88,20 @@ class DeepSeekService:
         user_prompt: str,
         temperature: float = 0.2,
         model: str | None = None,
-    ) -> str:
-        """Generic chat completion — returns raw assistant content string."""
+        return_usage: bool = False,
+    ) -> str | dict[str, Any]:
+        """Generic chat completion.
+
+        Returns raw assistant content string unless return_usage=True,
+        in which case returns {"content": str, "usage": {...}}.
+        """
         if not self.available():
             raise RuntimeError("deepseek_unavailable")
 
         payload = {
             "model": model or self.settings.deepseek_text_model,
             "messages": [
+                # System prompt marked for prefix caching (DeepSeek cache_control)
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
@@ -111,7 +120,22 @@ class DeepSeekService:
             response.raise_for_status()
             data = response.json()
 
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        if usage:
+            cache_read = usage.get("prompt_cache_hit_tokens", 0)
+            cache_miss = usage.get("prompt_cache_miss_tokens", 0)
+            if cache_read or cache_miss:
+                logger.debug(
+                    "DeepSeek cache: hit=%d miss=%d prompt=%d completion=%d",
+                    cache_read, cache_miss,
+                    usage.get("prompt_tokens", 0),
+                    usage.get("completion_tokens", 0),
+                )
+
+        if return_usage:
+            return {"content": content, "usage": usage}
+        return content
 
     def _parse_json_content(self, content: str) -> dict[str, Any]:
         try:

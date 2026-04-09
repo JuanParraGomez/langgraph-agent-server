@@ -100,8 +100,18 @@ class RunStore:
             return None
         return _row_to_record(row)
 
+    def _safe_run_path(self, run_id: str) -> Path:
+        """Resolve run log path, raising ValueError on path traversal attempts."""
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-]{1,128}$', run_id):
+            raise ValueError(f"Invalid run_id: {run_id!r}")
+        path = (self.logs_dir / f"{run_id}.log").resolve()
+        if not str(path).startswith(str(self.logs_dir.resolve())):
+            raise ValueError(f"Path traversal detected in run_id: {run_id!r}")
+        return path
+
     def append_log(self, run_id: str, event: str, payload: dict[str, Any]) -> Path:
-        path = self.logs_dir / f"{run_id}.log"
+        path = self._safe_run_path(run_id)
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "event": event,
@@ -113,7 +123,7 @@ class RunStore:
         return path
 
     def read_logs(self, run_id: str) -> list[dict[str, Any]]:
-        path = self.logs_dir / f"{run_id}.log"
+        path = self._safe_run_path(run_id)
         if not path.exists():
             return []
 
